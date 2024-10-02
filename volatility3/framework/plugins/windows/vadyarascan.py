@@ -28,6 +28,9 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
     _required_framework_version = (2, 4, 0)
     _version = (1, 1, 1)
 
+    BEFORE_DEFAULT = 0
+    AFTER_DEFAULT = 32
+
     @classmethod
     def get_requirements(cls) -> List[interfaces.configuration.RequirementInterface]:
         # create a list of requirements for vadyarascan
@@ -47,6 +50,18 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                 name="pid",
                 element_type=int,
                 description="Process IDs to include (all other processes are excluded)",
+                optional=True,
+            ),
+            requirements.IntRequirement(
+                name="before",
+                description="Number of bytes of context to display before match",
+                default=cls.BEFORE_DEFAULT,
+                optional=True,
+            ),
+            requirements.IntRequirement(
+                name="after",
+                description="Number of bytes of context to display after match",
+                default=cls.AFTER_DEFAULT,
                 optional=True,
             ),
         ]
@@ -92,7 +107,15 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                         task.UniqueProcessId,
                                         match.rule,
                                         match_string.identifier,
-                                        instance.matched_data,
+                                        format_hints.HexBytes(
+                                            data[
+                                                instance.offset
+                                                - self.config[
+                                                    "before"
+                                                ] : instance.offset
+                                                + self.config["after"]
+                                            ]
+                                        ),
                                     )
                         else:
                             for offset, name, value in match.strings:
@@ -101,7 +124,13 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                     task.UniqueProcessId,
                                     match.rule,
                                     name,
-                                    value,
+                                    format_hints.HexBytes(
+                                        data[
+                                            offset
+                                            - self.config["before"] : offset
+                                            + self.config["after"]
+                                        ]
+                                    ),
                                 )
                 else:
                     for match in rules.scan(data).matching_rules:
@@ -112,10 +141,13 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                     task.UniqueProcessId,
                                     f"{match.namespace}.{match.identifier}",
                                     match_string.identifier,
-                                    data[
-                                        instance.offset : instance.offset
-                                        + instance.length
-                                    ],
+                                    format_hints.HexBytes(
+                                        data[
+                                            instance.offset
+                                            - self.config["before"] : instance.offset
+                                            + self.config["after"]
+                                        ]
+                                    ),
                                 )
 
     def _generator(self):
@@ -146,7 +178,7 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                 ("PID", int),
                 ("Rule", str),
                 ("Component", str),
-                ("Value", bytes),
+                ("Value", format_hints.HexBytes),
             ],
             self._generator(),
         )
