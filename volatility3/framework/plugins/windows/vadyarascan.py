@@ -28,9 +28,6 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
     _required_framework_version = (2, 4, 0)
     _version = (1, 1, 1)
 
-    BEFORE_DEFAULT = 0
-    AFTER_DEFAULT = 32
-
     @classmethod
     def get_requirements(cls) -> List[interfaces.configuration.RequirementInterface]:
         # create a list of requirements for vadyarascan
@@ -44,24 +41,12 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                 name="pslist", plugin=pslist.PsList, version=(2, 0, 0)
             ),
             requirements.PluginRequirement(
-                name="yarascan", plugin=yarascan.YaraScan, version=(2, 0, 0)
+                name="yarascan", plugin=yarascan.YaraScan, version=(3, 0, 0)
             ),
             requirements.ListRequirement(
                 name="pid",
                 element_type=int,
                 description="Process IDs to include (all other processes are excluded)",
-                optional=True,
-            ),
-            requirements.IntRequirement(
-                name="before",
-                description="Number of bytes of context to display before match",
-                default=cls.BEFORE_DEFAULT,
-                optional=True,
-            ),
-            requirements.IntRequirement(
-                name="after",
-                description="Number of bytes of context to display after match",
-                default=cls.AFTER_DEFAULT,
                 optional=True,
             ),
         ]
@@ -107,15 +92,14 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                         task.UniqueProcessId,
                                         match.rule,
                                         match_string.identifier,
-                                        format_hints.HexBytes(
-                                            data[
+                                        data[
+                                            max(
                                                 instance.offset
-                                                - self.config[
-                                                    "before"
-                                                ] : instance.offset
-                                                + self.config["after"]
-                                            ]
-                                        ),
+                                                - self.config["context_before"],
+                                                0,
+                                            ) : instance.offset
+                                            + self.config["context_after"]
+                                        ],
                                     )
                         else:
                             for offset, name, value in match.strings:
@@ -124,13 +108,12 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                     task.UniqueProcessId,
                                     match.rule,
                                     name,
-                                    format_hints.HexBytes(
-                                        data[
-                                            offset
-                                            - self.config["before"] : offset
-                                            + self.config["after"]
-                                        ]
-                                    ),
+                                    data[
+                                        max(
+                                            offset - self.config["context_before"], 0
+                                        ) : offset
+                                        + self.config["context_after"]
+                                    ],
                                 )
                 else:
                     for match in rules.scan(data).matching_rules:
@@ -141,18 +124,23 @@ class VadYaraScan(interfaces.plugins.PluginInterface):
                                     task.UniqueProcessId,
                                     f"{match.namespace}.{match.identifier}",
                                     match_string.identifier,
-                                    format_hints.HexBytes(
-                                        data[
+                                    data[
+                                        max(
                                             instance.offset
-                                            - self.config["before"] : instance.offset
-                                            + self.config["after"]
-                                        ]
-                                    ),
+                                            - self.config["context_before"],
+                                            0,
+                                        ) : instance.offset
+                                        + self.config["context_after"]
+                                    ],
                                 )
 
     def _generator(self):
         for match in self.enumerate_matches():
-            yield 0, (format_hints.Hex(match[0]), *(match[1:]))
+            yield 0, (
+                format_hints.Hex(match[0]),
+                *(match[1:-1]),
+                format_hints.HexBytes(match[-1]),
+            )
 
     @staticmethod
     def get_vad_maps(
